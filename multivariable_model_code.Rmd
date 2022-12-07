@@ -1,0 +1,143 @@
+---
+title: "analysis"
+author: "Xujia Liu"
+date: "2022-10-10"
+output: html_document
+---
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+```
+
+```{r}
+library(reticulate)
+```
+
+```{python}
+filename = 'df_cleaned_20220905'
+pklfile = filename + '/' + filename + '.pkl'
+with open(pklfile,'rb') as f:
+    df = pickle.load(f)
+```
+
+```{python}
+filename = 'raw_data.xlsx'
+df = pd.read_excel(filename)
+```
+
+```{python}
+df.info()
+df.MH.value_counts()
+df.involved_macula_change.value_counts()
+```
+
+```{r}
+str(py$df)
+```
+
+备份数据
+
+```{python}
+df_copy = df.copy()
+```
+
+follow_up_BCVA_logMAR正态性检验
+
+```{r}
+library(ggplot2)
+library(qqplotr)
+library(nortest)
+ggplot(data = py$df, mapping = aes(sample = follow_up_BCVA_logMAR)) +
+  stat_pp_band(detrend = TRUE) +
+  stat_pp_line(detrend = TRUE) +
+  stat_pp_point(detrend = TRUE) +
+  labs(x = "Probability Points", y = "Cumulative Probability")
+
+ad.test(py$df$follow_up_BCVA_logMAR)
+cvm.test(py$df$follow_up_BCVA_logMAR)
+lillie.test(py$df$follow_up_BCVA_logMAR)
+pearson.test(py$df$follow_up_BCVA_logMAR)
+sf.test(py$df$follow_up_BCVA_logMAR)
+```
+
+检验结果, 不满足正态性, 分析时改用置换检验
+
+```{r}
+
+py$df$involved_macula = factor(py$df$involved_macula, levels = c(0,0.5,1), 
+                               labels = c(111,222,333))
+str(py$df)
+```
+
+```{r}
+library(lmPerm)
+library(simpleboot)
+set.seed(88888888)
+```
+
+```{r}
+set.seed(88888888)
+fit <- lmp(follow_up_BCVA_logMAR ~ involved_macula_bin + 
+                                   preoperatie_BCVA_logMAR +
+                                   proliferative_bin,
+           seqs=F, data=py$df, maxIter = 1e7)
+summary(fit)
+```
+
+```{r}
+set.seed(8888888)
+fit <- lmp(follow_up_BCVA_logMAR ~ involved_macula_bin + 
+                                   preoperatie_BCVA_logMAR +
+                                   proliferative_bin,
+           seqs=F, data=py$df, maxIter = 1e7)
+
+bstar = NULL # Rows of bstar will be bootstrap vectors of regression coefficients.
+n = length(py$df$follow_up_BCVA_logMAR); B = 3000
+for(draw in 1:B)
+{numseed <- runif(1,min = 0, max = 1)
+# Randomly sample from the rows of kars, with replacement
+Dstar = py$df[sample(1:n,size=n,replace=T),]
+model = lmp(follow_up_BCVA_logMAR ~ involved_macula_bin + preoperatie_BCVA_logMAR +
+             proliferative_bin
+           ,data=Dstar)
+bstar = rbind( bstar,coef(model) )
+} # Next draw
+
+```
+
+```{r}
+df_bstar = data.frame(bstar)
+quantile(df_bstar$proliferative_bin1, probs = c(0.025,0.975,0.5))
+quantile(df_bstar$involved_macula_bin1, probs = c(0.025,0.975,0.5))
+quantile(df_bstar$preoperatie_BCVA_logMAR, probs = c(0.025,0.975,0.5))
+```
+
+```{r}
+set.seed(88888888)
+temp <- aovp(preoperatie_BCVA_logMAR~proliferative, data = py$df)
+summary(temp)
+```
+
+```{r}
+library(vcd)
+library(grid)
+tab <- xtabs(~type + proliferative, data = py$df)
+summary(assocstats(tab))
+```
+
+VIF
+
+```{r}
+library(car)
+library(lmPerm)
+library(DescTools)
+
+set.seed(88888888)
+fit <- lmp(follow_up_BCVA_logMAR ~  involved_macula_bin + 
+             preoperatie_BCVA_logMAR + type_TRD + proliferative
+           ,seqs=F, data=py$df, maxIter = 1e7)
+vif(fit)
+```
